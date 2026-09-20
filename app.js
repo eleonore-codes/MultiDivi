@@ -1,73 +1,174 @@
-import {CONFIG as C,TEXT,durations} from './config.js';
-import {BY_ID} from './content.js';
+import {CONFIG as C,LEVEL_NAMES,TEXT,durations} from './config.js';
+import {BY_ID,LEVEL_TASKS} from './content.js';
 import {selectTask} from './learning-engine.js';
-import {loadState,saveState,ensureDay,dayKey,STORAGE_KEY} from './storage.js';
-import {recordAnswer,finishPhase} from './session.js';
+import {loadState,saveState,resetState,STORAGE_KEY,dayKey} from './storage.js';
+import {startSession,startFocus,recordTask,recordEvidence,finishPhase} from './session.js';
+import {newInput,enterDigit,backspace,inputValue,inputDisplay,activePlace} from './place-value.js';
+import {newWork,promptFor,acceptValue,selectPartial} from './strategy.js';
+import {progressHTML} from './progress.js';
 import {createCard,canShareFile} from './share-card.js';
-const dev=['localhost','127.0.0.1'].includes(location.hostname)&&new URLSearchParams(location.search).get('dev')==='1';
-const key=dev?STORAGE_KEY+'-dev':STORAGE_KEY, loaded=loadState(localStorage,key);
-let state=loaded.state,blocked=loaded.blocked,paused=true,started=0,taskStarted=0,answer=['',''],field=0,cardURL=null,cardFile=null;
+const local=['localhost','127.0.0.1'].includes(location.hostname);
+const dev=local&&new URLSearchParams(location.search).get('dev')==='1',key=STORAGE_KEY+(dev?'-dev':'');
+let storage;try{storage=localStorage;}catch{}
+const loaded=loadState(storage,key);
+let state=loaded.state,blocked=loaded.blocked,view='main',paused=true,phaseClock=null,answerClock=null,firstDigit=null,renderToken=0,cardFile=null,cardURL=null,pendingWorker=null;
 const duration=durations(dev),app=document.querySelector('#app'),notice=document.querySelector('#notice');
-function warn(text){notice.textContent=text;notice.hidden=false;}
-function save(){if(!blocked&&!saveState(state,localStorage,key))warn('Dein Gerät speichert gerade nicht. Lass diese Seite offen und hole einen Erwachsenen dazu.');}
+function warn(message){notice.hidden=false;notice.textContent=message;}
 if(loaded.error)warn(loaded.error);
-ensureDay(state);if(state.day.active)state.day.active.interrupted=true;if(!blocked)save();
-function button(label,action,cls='primary'){return `<button class="${cls}" data-action="${action}">${label}</button>`;}
-function setView(html){app.innerHTML=html;app.focus({preventScroll:true});}
-function checkpoint(){if(!started)return;const now=performance.now(),delta=now-started;state.day.elapsed+=delta;started=now;if(delta>C.INTERRUPTION_MS&&state.day.active)state.day.active.interrupted=true;}
-function pause(){checkpoint();started=0;taskStarted=0;paused=true;if(state.day.active)state.day.active.interrupted=true;save();render();}
-function begin(phase){ensureDay(state);state.day.stage=phase;state.day.elapsed=0;state.day.active=null;state.day.feedback=null;paused=false;nextTask();}
-function nextTask(){const d=state.day;const recent=Object.values(d.rows).flat().slice(-C.SPACING_TASKS).map(r=>BY_ID[r.id]);
-  const task=selectTask(state.model,{level:d.stage==='rest'?2:1,recent,focus:d.stage==='b'?d.focus:[]});
-  d.active={id:task.id,interrupted:false};d.feedback=null;answer=['',''];field=0;save();render();}
-function startClock(){requestAnimationFrame(()=>requestAnimationFrame(()=>{if(!paused&&state.day.active&&!document.hidden){if(!started)started=performance.now();if(!state.day.feedback)taskStarted=performance.now();}}));}
-function render(){const d=state.day;
-  if(blocked){setView('<h1>Lernstand prüfen</h1><p>Bitte hole einen Erwachsenen dazu. Die gespeicherten Daten werden nicht überschrieben.</p>');return;}
-  if(['a','b','rest'].includes(d.stage)) {
-    if(paused){setView(`<p class="eyebrow">Deine Übung ist gespeichert</p><h1>In Ruhe weiter</h1><p>Du machst dort weiter, wo du aufgehört hast.</p>${button('Weiterüben','resume')}`);return;}
-    const task=BY_ID[d.active?.id];if(!task){nextTask();return;}
-    const feedback=d.feedback;
-    setView(`<div class="topline"><p class="eyebrow">${d.stage==='a'?'Teil 1 · Gemischt':d.stage==='b'?'Teil 2 · Gezielt üben':'Teilen mit Rest'}</p>${button('Pause','pause','plain')}</div><section class="exercise" aria-label="Rechenaufgabe"><h1 class="equation">${task.label}</h1>${feedback?`<div class="feedback ${feedback.ok?'good':'bad'}" role="status"><strong>${feedback.ok?TEXT.correct:TEXT.wrong}</strong>${!feedback.ok?`<span class="solution">${task.solution}</span>`:''}</div>${button(TEXT.next,'next')}`:`<div class="answers"><button class="answer" data-field="0" aria-label="${task.level===2?'Ergebnis':'Antwort'} eingeben" aria-pressed="true"><span id="value0">□</span></button>${task.level===2?'<span>Rest</span><button class="answer" data-field="1" aria-label="Rest eingeben" aria-pressed="false"><span id="value1">□</span></button>':''}</div><p id="input-hint" class="muted">${task.level===2?'Gib das Ergebnis ein.':'Welche Zahl fehlt?'}</p><div class="keypad" aria-label="Zahlentasten">${[1,2,3,4,5,6,7,8,9,0].map(n=>`<button data-digit="${n}" class="${n===0?'zero':''}">${n}</button>`).join('')}<button class="delete" data-action="delete" aria-label="Letzte Ziffer löschen">Löschen</button></div>${button(TEXT.check,'submit')}`}</section>`);
-    if(!feedback)updateAnswer();startClock();return;
+if(loaded.legacy)warn('MultiDivi ist bereit. Für diese neue Version beginnt der bisherige Test-Lernstand neu.');
+function save(){if(!blocked&&state&&!saveState(state,storage,key))warn('Speichern klappt gerade nicht. Lass die Seite offen und hole einen Erwachsenen dazu.');}
+if(state?.session?.active){state.session.active.work.interrupted=true;state.session.active.input.lastTap=null;}
+if(state?.session?.trial){state.session.trial.work.interrupted=true;state.session.trial=null;}
+const btn=(label,action,cls='primary',extra='')=>`<button class="${cls}" data-action="${action}" ${extra}>${label}</button>`;
+function display(html){app.innerHTML=html+((pendingWorker&&!active())?btn('Neue Version laden','update','secondary'):'');app.focus({preventScroll:true});}
+function active(){return state?.session?.trial||state?.session?.active;}
+function task(){const a=active();return a?.task||BY_ID[a?.taskId];}
+function running(){return !paused&&view==='main'&&!!active();}
+function checkpoint(){
+  if(phaseClock===null)return;const now=performance.now(),delta=now-phaseClock;
+  if(!state.session.trial)state.session.elapsed+=delta;
+  if(active()&&!active().work.done)active().work.elapsedMs=(active().work.elapsedMs||0)+delta;
+  if(delta>C.INTERRUPTION_MS&&active())active().work.interrupted=true;phaseClock=now;
+}
+function stopClock(){checkpoint();phaseClock=null;answerClock=null;renderToken++;}
+function pause(){stopClock();paused=true;if(active())active().work.interrupted=true;save();render();}
+function startClock(){
+  const token=++renderToken;requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    if(token!==renderToken||!running()||document.hidden)return;
+    if(phaseClock===null)phaseClock=performance.now();
+    if(!active().work.feedback&&promptFor(task(),active().work)){answerClock=performance.now();firstDigit=null;}
+  }));
+}
+function makeActive(t){return {taskId:t.id,task:t.drill?t:undefined,work:newWork(t),input:newInput()};}
+function nextTask(){
+  const s=state.session,recent=s.rows.a.concat(s.rows.b).slice(-C.SPACING_TASKS);
+  let t;
+  if(s.stage==='b'&&s.drills.length&&Math.random()<C.FOCUS_SHARE){
+    const pool=s.drills.filter(d=>!recent.slice(-2).some(r=>r.id===d.id));
+    if(pool.length)t=pool[Math.floor(Math.random()*pool.length)];
   }
-  if(d.stage==='between'){const s=d.results.a;setView(`<p class="eyebrow">Teil 1 geschafft</p><h1>6 Minuten geschafft!</h1>${stats(s)}<p>${s.wrong ? 'Jetzt übst du die Aufgaben, bei denen noch Fehler waren.' : 'Alles richtig! Jetzt übst du weiter, damit es noch leichter geht.'}</p><p>Übe sie jetzt 4 Minuten. So wirst du sicherer.</p>${button('4-Minuten-Training starten','focus')}`);return;}
-  if(d.stage==='done'){const c=d.results.comparison;setView(`<p class="eyebrow">Beide Teile geschafft</p><h1>Gut geübt!</h1><div class="panel"><h2>Dein Training heute</h2><p>6 Minuten: <strong>${d.results.a.correct} richtig</strong></p><p>4 Minuten: <strong>${d.results.b.correct} richtig</strong></p>${c.adequate?`<p>Gleiche Aufgaben in beiden Teilen:</p><div class="stats"><div class="stat"><span>Vorher</span><strong>${c.before.accuracy} %</strong><span>richtig</span></div><div class="stat"><span>Nachher</span><strong>${c.after.accuracy} %</strong><span>richtig</span></div>`:''}<p>${c.message}</p></div><p><strong>${TEXT.done}</strong></p>${button('Erfolgskarte erstellen','card')}<div id="card"></div>${state.level2?'<p class="muted">Teilen mit Rest ist freigeschaltet. Du findest es morgen auf der Startseite.</p>':''}`);return;}
-  setView(`<p class="eyebrow">Dein tägliches Training</p><h1>Einmaleins.<br>Schritt für Schritt.</h1><div class="steps"><div class="step"><span class="number">1</span><div><strong>6 Minuten gemischt</strong><span>Malnehmen und Teilen</span></div></div><div class="step"><span class="number">2</span><div><strong>4 Minuten gezielt</strong><span>Üben, was noch schwerfällt</span></div></div></div>${button('Training starten','start')}<div class="panel"><h2>Teilen mit Rest</h2>${state.level2?`<p>Freigeschaltet · 5 Minuten</p>${button('Mit Rest üben','rest','secondary')}`:'<p>Noch gesperrt</p><p>Wird frei, wenn du viele Aufgaben sicher und schnell lösen kannst.</p>'}</div><details><summary>Für Erwachsene</summary><p>Der Lernstand bleibt in diesem Browser. Beim Löschen der Website-Daten geht er verloren.</p><p>Die Übungszeit pausiert beim Verlassen der Seite. Die aktuelle Aufgabe darf immer fertig gerechnet werden.</p><p>Stufe 2 braucht mindestens 600 Antworten, 95 % richtige Antworten zuletzt und automatisierte Antworten bei 80 % aller Aufgabenformen.</p><p>Zum Offline-Üben diese Seite einmal mit Internet öffnen und kurz offen lassen.</p></details><p class="footnote">Ohne Anmeldung. Ohne Werbung.</p>${dev?'<p>Testmodus · 30 + 20 Sekunden · eigener Lernstand</p>':''}`);
+  t ||= selectTask(state.factMastery,{level:s.level,recent,focus:s.stage==='b'?s.focus:[]});
+  s.active=makeActive(t);answerClock=null;save();render();
 }
-function stats(s){return `<div class="stats"><div class="stat"><strong>${s.correct}</strong><span>richtig</span></div><div class="stat"><strong>${s.wrong}</strong><span>noch mit Fehler</span></div></div>`;}
-function updateAnswer(){answer.forEach((v,i)=>{const el=document.querySelector(`#value${i}`);if(el)el.textContent=v||'□';});document.querySelectorAll('[data-field]').forEach(b=>b.setAttribute('aria-pressed',String(Number(b.dataset.field)===field)));const hint=document.querySelector('#input-hint');if(hint&&state.day.stage==='rest')hint.textContent=field===0?'Gib das Ergebnis ein.':'Gib den Rest ein.';}
-function submit(){const d=state.day;if(paused||d.feedback||!taskStarted)return;const t=BY_ID[d.active.id];if(answer[0]===''||(t.level===2&&answer[1]==='')){if(t.level===2&&answer[0]!==''){field=1;updateAnswer();}return;}
-  checkpoint();const ms=d.active.interrupted?null:performance.now()-taskStarted;taskStarted=0;
-  const ok=Number(answer[0])===t.answer&&(t.level!==2||Number(answer[1])===t.remainder);
-  recordAnswer(state,t,ok,ms);d.feedback={ok};save();render();
+function begin(){
+  if(startSession(state,state.selectedLevel)){paused=false;nextTask();}
+  else render();
 }
-app.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;
-  if(b.dataset.field!==undefined){field=Number(b.dataset.field);updateAnswer();return;}
-  if(b.dataset.digit!==undefined){if(answer[field].length<3)answer[field]+=b.dataset.digit;updateAnswer();return;}
-  switch(b.dataset.action){case 'start':begin('a');break;case 'focus':begin('b');break;case 'rest':state.day.returnStage=state.day.stage;begin('rest');break;
-    case 'pause':pause();break;case 'resume':paused=false;answer=['',''];render();break;
-    case 'delete':answer[field]=answer[field].slice(0,-1);updateAnswer();break;case 'submit':submit();break;
-    case 'next':checkpoint();if(state.day.elapsed>=duration[state.day.stage]){started=0;finishPhase(state);save();render();}else nextTask();break;
-    case 'card':await showCard();break;
-    case 'share':try{await navigator.share({files:[cardFile],title:'Mein Einmaleins-Training'});}catch(err){if(err.name!=='AbortError')warn('Teilen klappt hier nicht. Du kannst die Karte unten speichern oder öffnen.');}break;
+function boardHTML(t,w){
+  if(t.drill)return '<p class="eyebrow">Ein Rechenschritt zum Üben</p>';
+  if(t.level===5){
+    if(w.stage==='decompose'){const i=w.decomp.length;return `<p>Zerlege ${i<2?t.a:t.b} in Zehner und Einer.</p><p>${i%2===1?w.decomp.at(-1)+' + □':'Zuerst die Zehnerzahl, dann die Einerzahl.'}</p>`;}
+    const split=`<p class="decomposition">${t.a} = ${t.decomposition[0].join(' + ')}<br>${t.b} = ${t.decomposition[1].join(' + ')}</p>`;
+    if(w.stage==='partials'&&w.selected!==null)return split;
+    if(w.stage==='partials')return split+`<p>Wähle eine Teilaufgabe.</p><div class="board">${t.partials.map((p,i)=>`<button data-partial="${i}" ${w.partials[i]!==undefined?'disabled':''} class="${w.selected===i?'selected':''}">${p.label}<br><strong>${w.partials[i]!==undefined?'✓ '+w.partials[i]:'□'}</strong></button>`).join('')}</div>`;
+    return split;
+  }
+  if(t.level===6)return `<p>Noch zu verteilen: <strong>${w.remaining}</strong></p>${w.stage==='choose'?'<p>Wie oft passt die Zahl hinein?<br>Du darfst mit einem Teil anfangen.</p>':''}${w.chunks.length?`<details><summary>Bisheriger Rechenweg</summary>${w.chunks.map(c=>`<p>${t.divisor} × ${c.q} = ${c.product}<br>${c.before} − ${c.product} = ${c.after}</p>`).join('')}</details>`:''}`;
+  return '';
+}
+function inputHTML(){return `<div class="input-area"><p id="place" class="place" aria-live="polite"></p><output id="number" class="number-output" aria-label="Deine eingegebene Zahl"></output><p class="entry-help">Beginne mit den Einern.</p><div class="keypad" aria-label="Zahlentasten">${[1,2,3,4,5,6,7,8,9,0].map(n=>`<button data-digit="${n}" class="${n===0?'zero':''}">${n}</button>`).join('')}<button class="delete" data-action="delete" aria-label="Letzte Stelle löschen">Löschen</button></div>${btn('Fertig','submit')}</div>`;}
+function reportHTML(r){
+  if(!r)return '';
+  return `<div class="panel"><h2>${r.successNumber?'Erfolg Nr. '+r.successNumber:'Gut geübt!'}</h2><p>${r.total} ${r.total===1?'Aufgabe':'Aufgaben'} gerechnet.<br><strong>${r.correct} ${r.level>=5?'ohne Korrektur richtig':'richtig'} · ${r.accuracy??0} %</strong></p>${r.successNumber?btn('Erfolgskarte ansehen','card','secondary',`data-number="${r.successNumber}"`):'<p>Du hast geübt. Bleib dran.</p>'}</div>`;
+}
+function unlockHTML(r){
+  if(!r?.unlocked?.length)return '';
+  return r.unlocked.map(l=>`<div class="panel"><h2>Neues Level freigeschaltet!</h2><p>${LEVEL_NAMES[l]}</p>${l===2?'<p>Du hast 5 starke Lernerfolge gesammelt.</p>':''}${btn('Level '+l+' ausprobieren','try-level','secondary',`data-level="${l}"`)}<p>Eine Beispielaufgabe. Danach geht es hier weiter.</p></div>`).join('');
+}
+function render(){
+  renderToken++;
+  if(blocked){display('<h1>Lernstand prüfen</h1><p>Bitte hole einen Erwachsenen dazu. Die gespeicherten Daten werden nicht überschrieben.</p>');return;}
+  if(view==='progress'){display(progressHTML(state)+btn('Zurück','back','secondary'));return;}
+  if(view==='reset-warning'){display('<h1>Lerndaten zurücksetzen?</h1><p>Alle Lerntage, Erfolge und Freischaltungen dieses Browsers werden gelöscht. Dies ist nicht rückgängig zu machen.</p>'+btn('Abbrechen','progress','secondary')+btn('Ich möchte zurücksetzen','reset-confirm','secondary'));return;}
+  if(view==='reset-confirm'){display('<h1>Wirklich neu beginnen?</h1><p>Erfolg Nr. 0 · 0 Lerntage · keine Serie.</p>'+btn('Abbrechen','progress','secondary')+btn('Ja, alle Lerndaten endgültig löschen','reset-final','secondary'));return;}
+  if(view==='card'){return;}
+  const s=state.session;
+  if(s&&(s.trial||['a','b'].includes(s.stage))){
+    if(paused){display('<p class="eyebrow">Deine Übung ist gespeichert</p><h1>In Ruhe weiter</h1><p>Die aktuelle Aufgabe bleibt erhalten.</p>'+btn('Weiterüben','resume')+btn('Fortschritt','progress','plain'));return;}
+    const a=active(),t=task();if(!a){nextTask();return;}
+    const w=a.work,p=promptFor(t,w);
+    display(`<div class="topline"><p>${s.trial?'Beispielaufgabe':s.stage==='a'?'Teil 1 · Gemischt':'Teil 2 · Gezielt'}</p>${btn('Pause','pause','plain')}</div><section class="exercise"><h1 class="equation">${t.label}</h1>${boardHTML(t,w)}${w.feedback?`<div class="feedback ${w.feedback.ok?'good':'bad'}" role="status"><strong>${w.feedback.ok?TEXT.correct:TEXT.wrong}</strong>${!w.feedback.ok?`<span class="solution">${w.feedback.solution}</span>`:''}</div>${btn(w.feedback.retry?'Noch einmal':'Weiter','next')}`:p?`${t.level>=5||t.level===2?`<h2 class="step-equation">${p.label}</h2>`:''}${inputHTML()}`:''}</section>`);
+    if(!w.feedback&&p)updateInput();startClock();return;
+  }
+  if(s?.stage==='between'){
+    display(`<p class="eyebrow">Teil 1 geschafft</p><h1>3 Minuten geschafft!</h1>${reportHTML(s.reports.a)}<p>Jetzt übst du 2 Minuten die Aufgaben, die noch Training brauchen.</p>${btn('2-Minuten-Training starten','focus')}${unlockHTML(s.reports.a)}${btn('Fortschritt','progress','plain')}`);return;
+  }
+  if(s?.stage==='done'&&state.completedDates.includes(dayKey())){
+    display(`<h1>Für heute geschafft!</h1>${reportHTML(s.reports.b)}<p>${s.comparison.message}</p><p><strong>${TEXT.done}</strong></p>${s.reports.a.successNumber?btn('Karte aus Teil 1','card','secondary',`data-number="${s.reports.a.successNumber}"`):''}${unlockHTML(s.reports.b)}${btn('Fortschritt','progress','plain')}`);return;
+  }
+  display(`<p class="eyebrow">Dein tägliches Training</p><h1>MultiDivi</h1><p>3 Minuten gemischt.<br>2 Minuten gezielt üben.</p><div class="level-list" aria-label="Lernstufe auswählen">${Object.entries(LEVEL_NAMES).map(([l,name])=>`<button data-action="level" data-level="${l}" aria-pressed="${state.selectedLevel===Number(l)}" ${state.unlockedLevels.includes(Number(l))?'':'disabled'}><strong>Level ${l}</strong><span>${name}${state.unlockedLevels.includes(Number(l))?'':' · noch gesperrt'}</span></button>`).join('')}</div>${btn('Training starten','start')}${btn('Fortschritt','progress','plain')}<p class="footnote">Ohne Anmeldung. Dein Lernstand bleibt hier.</p>${dev?'<p>Testmodus · 30 + 20 Sekunden · eigener Lernstand</p>':''}${pendingWorker?btn('Neue Version laden','update','secondary'):''}`);
+}
+function updateInput(){const a=active();document.querySelector('#number').textContent=inputDisplay(a.input);document.querySelector('#place').textContent=activePlace(a.input);const b=document.querySelector('[data-action="submit"]');if(b)b.disabled=!a.input.digits.length;}
+function digit(n){
+  if(!running()||answerClock===null||active().work.feedback)return;
+  const now=performance.now();if(enterDigit(active().input,n,now)){if(firstDigit===null)firstDigit=now-answerClock;updateInput();save();}
+}
+function submit(){
+  if(!running()||answerClock===null||active().work.feedback)return;
+  const a=active(),value=inputValue(a.input);if(value===null)return;checkpoint();
+  const t=task(),timing={firstMs:firstDigit,totalMs:performance.now()-answerClock,interrupted:a.work.interrupted};
+  const e=acceptValue(t,a.work,value,timing);if(!e)return;
+  if(!state.session.trial)recordEvidence(state,t,e);
+  answerClock=null;a.input=newInput();
+  if(a.work.done&&!state.session.trial)recordTask(state,t,a.work);
+  save();render();
+}
+async function showCard(number){
+  const card=state.cards.find(c=>c.number===number);if(!card)return;
+  stopClock();view='card';
+  try{
+    const blob=await createCard(card);if(cardURL)URL.revokeObjectURL(cardURL);cardURL=URL.createObjectURL(blob);cardFile=new File([blob],`multidivi-erfolg-${card.number}.png`,{type:'image/png'});
+    display(`<h1>Erfolg Nr. ${card.number}</h1><img class="card-image" src="${cardURL}" alt="Erfolgskarte mit Ergebnis, Datum und Tagesserie">${canShareFile(navigator,cardFile)?btn('Karte teilen','share'):''}<a class="button secondary" href="${cardURL}" download="${cardFile.name}">Bild speichern</a><a class="button secondary" href="${cardURL}" target="_blank" rel="noopener">Bild öffnen</a><p>Auf dem iPhone: Bild öffnen und lange auf das Bild drücken.</p>${btn('Zurück','back','secondary')}`);
+  }catch{view='main';warn('Die Karte konnte nicht erstellt werden. Bitte erneut versuchen.');render();}
+}
+app.addEventListener('click',async event=>{
+  const b=event.target.closest('button');if(!b)return;
+  if(b.dataset.digit!==undefined){digit(Number(b.dataset.digit));return;}
+  if(b.dataset.partial!==undefined){if(selectPartial(active().work,Number(b.dataset.partial))){active().input=newInput();save();render();}return;}
+  switch(b.dataset.action){
+    case 'level':state.selectedLevel=Number(b.dataset.level);save();render();break;
+    case 'start':begin();break;
+    case 'resume':paused=false;render();break;
+    case 'pause':pause();break;
+    case 'delete':if(active()&&!active().work.feedback){backspace(active().input);updateInput();save();}break;
+    case 'submit':submit();break;
+    case 'next':{
+      checkpoint();const a=active();if(!a?.work.feedback)break;
+      if(a.work.done){
+        if(state.session.trial){state.session.trial=null;stopClock();paused=true;save();render();break;}
+        if(state.session.elapsed>=duration[state.session.stage]){stopClock();finishPhase(state);save();render();}
+        else nextTask();
+      }else{a.work.feedback=null;a.input=newInput();save();render();}break;
+    }
+    case 'focus':if(startFocus(state)){paused=false;nextTask();}break;
+    case 'progress':stopClock();paused=true;if(active())active().work.interrupted=true;view='progress';save();render();break;
+    case 'back':view='main';render();break;
+    case 'card':await showCard(Number(b.dataset.number));break;
+    case 'share':try{await navigator.share({files:[cardFile],title:'Mein MultiDivi-Erfolg'});}catch(e){if(e.name!=='AbortError')warn('Teilen klappt hier nicht. Nutze Bild speichern oder Bild öffnen.');}break;
+    case 'try-level':{const level=Number(b.dataset.level);if(state.unlockedLevels.includes(level)){state.session.trial=makeActive(LEVEL_TASKS[level][0]);paused=false;save();render();}break;}
+    case 'reset-warning':view='reset-warning';render();break;
+    case 'reset-confirm':view='reset-confirm';render();break;
+    case 'reset-final':try{stopClock();state=resetState(storage,key);paused=true;view='main';notice.hidden=true;render();}catch{warn('Zurücksetzen konnte nicht gespeichert werden.');}break;
+    case 'update':save();pendingWorker?.postMessage({type:'ACTIVATE_UPDATE'});break;
   }
 });
-document.addEventListener('keydown',e=>{if(paused||!['a','b','rest'].includes(state.day.stage)||state.day.feedback||e.altKey||e.ctrlKey||e.metaKey)return;
-  if(/^\d$/.test(e.key)){e.preventDefault();if(answer[field].length<3)answer[field]+=e.key;updateAnswer();}
-  if(e.key==='Backspace'){e.preventDefault();answer[field]=answer[field].slice(0,-1);updateAnswer();}
-  if(e.key==='Enter'&&e.target===app){e.preventDefault();submit();}
+document.addEventListener('keydown',e=>{
+  if(!running()||e.ctrlKey||e.metaKey||e.altKey||e.repeat)return;
+  if(/^\d$/.test(e.key)){e.preventDefault();digit(Number(e.key));}
+  else if(e.key==='Backspace'&&active()&&!active().work.feedback){e.preventDefault();backspace(active().input);updateInput();save();}
+  else if(e.key==='Enter'&&e.target===app){e.preventDefault();submit();}
 });
-async function showCard(){try{const blob=await createCard(state.day);if(cardURL)URL.revokeObjectURL(cardURL);cardURL=URL.createObjectURL(blob);cardFile=new File([blob],`einmaleins-${state.day.date}.png`,{type:'image/png'});
-  const host=document.querySelector('#card');host.replaceChildren();const img=new Image();img.src=cardURL;img.alt='Deine Erfolgskarte mit den Ergebnissen beider Übungsteile';img.className='card-image';host.append(img);
-  if(canShareFile(navigator,cardFile)){const b=document.createElement('button');b.dataset.action='share';b.className='primary';b.textContent='Karte teilen';host.append(b);}
-  const a=document.createElement('a');a.href=cardURL;a.download=cardFile.name;a.className='button secondary';a.textContent='Bild speichern';host.append(a);
-  const open=document.createElement('a');open.href=cardURL;open.target='_blank';open.rel='noopener';open.className='button secondary';open.textContent='Bild öffnen';host.append(open);
-  const tip=document.createElement('p');tip.textContent='Auf dem iPhone: Bild öffnen und lange auf das Bild drücken, um es zu sichern.';host.append(tip);
-}catch{warn('Die Karte konnte nicht erstellt werden. Bitte versuche es noch einmal.');}}
-document.addEventListener('visibilitychange',()=>{if(document.hidden&&['a','b','rest'].includes(state.day.stage))pause();else if(!document.hidden&&state.day.date!==dayKey()&&!['a','b','rest','between'].includes(state.day.stage)){ensureDay(state);save();render();}});
-window.addEventListener('pagehide',()=>{checkpoint();started=0;if(state.day.active)state.day.active.interrupted=true;save();});
-window.addEventListener('storage',e=>{if(e.key===key){started=0;paused=true;blocked=true;warn('Das Training wurde in einem anderen Fenster geändert. Bitte nutze nur ein Fenster und lade diese Seite neu.');render();}});
-setInterval(()=>{if(started){checkpoint();save();}},4000);
-if(!dev&&'serviceWorker'in navigator)navigator.serviceWorker.register('./service-worker.js').catch(()=>warn('Offline-Speichern klappt gerade nicht. Mit Internet kannst du weiterüben.'));
-if(dev)window.learningDev={reset(){localStorage.removeItem(key);location.reload();},snapshot:()=>structuredClone(state)};
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&running())pause();else if(!document.hidden&&view==='main')render();});
+window.addEventListener('pagehide',()=>{stopClock();if(active())active().work.interrupted=true;save();});
+window.addEventListener('storage',e=>{if(e.key===key){stopClock();blocked=true;warn('Der Lernstand wurde in einem anderen Fenster geändert. Bitte diese Seite neu laden.');render();}});
+setInterval(()=>{if(phaseClock!==null){checkpoint();save();}},C.CHECKPOINT_MS);
+if('serviceWorker' in navigator&&!dev){
+  navigator.serviceWorker.register('./service-worker.js').then(reg=>{
+    const ready=()=>{pendingWorker=reg.waiting;if(pendingWorker){warn('Eine neue Version ist bereit. Nach dem Training kannst du sie auf der Startseite laden.');if(!active())render();}};
+    ready();reg.addEventListener('updatefound',()=>reg.installing?.addEventListener('statechange',ready));
+    reg.update().catch(()=>{});
+  }).catch(()=>warn('Offline-Speichern klappt gerade nicht. Mit Internet kannst du üben.'));
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{if(pendingWorker)location.reload();});
+}
+if(dev)window.learningDev={snapshot:()=>structuredClone(state),reset:()=>{state=resetState(storage,key);location.reload();}};
 render();

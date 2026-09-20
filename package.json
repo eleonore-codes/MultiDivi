@@ -1,1 +1,9 @@
-{"name":"einmaleins-in-ruhe","private":true,"type":"module","scripts":{"test":"node --test --test-isolation=none tests/*.test.js"}}
+{
+  "name": "multidivi",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test --test-isolation=none tests/*.test.js"
+  },
+  "version": "2.0.0"
+}

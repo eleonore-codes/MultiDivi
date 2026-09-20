@@ -1,13 +1,13 @@
 import {median} from './learning-engine.js';
-export function summarize(rows) {return {total:rows.length,correct:rows.filter(r=>r.ok).length,wrong:rows.filter(r=>!r.ok).length,accuracy:rows.length?Math.round(100*rows.filter(r=>r.ok).length/rows.length):null};}
-export function compare(a,b,focus) {
-  // Compare identical task forms seen in BOTH phases, not unequal exercise counts.
-  const ids=new Set(a.filter(x=>focus.includes(x.family)&&b.some(y=>y.id===x.id)).map(x=>x.id));
-  const before=a.filter(x=>ids.has(x.id)),after=b.filter(x=>ids.has(x.id));
+export function summarize(rows){const correct=rows.filter(r=>r.ok).length;return {total:rows.length,correct,accuracy:rows.length?Math.round(correct/rows.length*100):null,wrong:rows.length-correct,firstMs:median(rows.filter(r=>r.ok&&r.firstMs!==null).map(r=>r.firstMs)),totalMs:median(rows.filter(r=>r.ok&&r.totalMs!==null).map(r=>r.totalMs)),steps:rows.reduce((n,r)=>n+(r.steps||1),0),drills:rows.filter(r=>r.drill).length,fullTasks:rows.filter(r=>!r.drill).length};}
+export function compare(a,b){
+  const ids=[...new Set(a.map(x=>x.id))].filter(id=>b.some(x=>x.id===id));
+  // Equal weight per shared task prevents changing frequencies from fabricating improvement.
+  const groups=ids.map(id=>({a:a.filter(r=>r.id===id),b:b.filter(r=>r.id===id)}));
+  const adequate=groups.length>=3&&groups.every(g=>g.a.length>=2&&g.b.length>=2);
+  const pct=side=>groups.length?Math.round(groups.reduce((n,g)=>n+g[side].filter(r=>r.ok).length/g[side].length,0)/groups.length*100):null;
+  const before=pct('a'),after=pct('b');
   let faster=0;
-  for(const id of ids){const x=before.filter(r=>r.id===id&&r.ok&&r.ms!==null),y=after.filter(r=>r.id===id&&r.ok&&r.ms!==null);
-    if(x.length>=2&&y.length>=2&&median(y.map(r=>r.ms))<median(x.map(r=>r.ms))*.85)faster++;}
-  const adequate=before.length>=5&&after.length>=5&&ids.size>=3;
-  return {before:summarize(before),after:summarize(after),comparable:ids.size,adequate,faster,
-    message:adequate&&summarize(after).accuracy>summarize(before).accuracy?'Bei gleichen Aufgaben warst du im zweiten Teil sicherer.':faster?`${faster} Aufgaben hast du wiederholt schneller gelöst.`:'Du hast geübt. Ob es schon leichter geht, sehen wir beim nächsten Mal.'};
+  for(const g of groups){const x=g.a.filter(r=>r.ok&&r.firstMs!==null),y=g.b.filter(r=>r.ok&&r.firstMs!==null);if(x.length>=2&&y.length>=2&&median(y.map(r=>r.firstMs))<median(x.map(r=>r.firstMs))*.85)faster++;}
+  return {adequate,before,after,faster,message:adequate&&after>before?'Bei gleichen Aufgaben warst du im zweiten Teil sicherer.':faster?`${faster} Aufgaben hast du wiederholt schneller begonnen.`:'Du hast gezielt geübt. Beim nächsten Mal übst du weiter.'};
 }
