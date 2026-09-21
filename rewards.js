@@ -1,28 +1,17 @@
 import {CONFIG as C} from './config.js';
-import {distribution} from './learning-engine.js';
-import {dayKey,dayOrdinal} from './storage.js';
+import {dayKey,dayOrdinal,eventSnapshot} from './storage.js';
 export function qualifies(report){
   if(!report.total)return false;
   if(report.level<=4)return report.correct/report.total>=C.QUALIFYING_SUCCESS_ACCURACY&&report.total>=(report.phase==='a'?C.MIN_GENERAL_ATTEMPTS_FOR_SUCCESS:C.MIN_FOCUS_ATTEMPTS_FOR_SUCCESS);
   const onlyDrills=report.drills===report.total;
   return report.correct/report.total>=C.ADVANCED_SUCCESS_ACCURACY&&
     (onlyDrills?report.total>=C.DRILL_MIN_ATTEMPTS[report.phase]:
-      report.fullTasks>=C.ADVANCED_MIN_TASKS[report.phase]&&report.steps>=C.ADVANCED_MIN_STEPS[report.phase]);
+      (report.correctFullTasks??Math.min(report.correct,report.fullTasks))>=C.ADVANCED_MIN_TASKS[report.phase]&&report.steps>=C.ADVANCED_MIN_STEPS[report.phase]);
 }
-export function unlockLevels(state){
-  const opened=[];
-  for(const [key,rule] of Object.entries(C.UNLOCK)){
-    const level=Number(key);if(state.unlockedLevels.includes(level)||!state.unlockedLevels.includes(rule.prerequisite))continue;
-    const p=state.levelProgress[rule.prerequisite]||{},d=distribution(state.factMastery,rule.prerequisite);
-    const yes=level===2?state.level2QualifyingSuccesses>=C.LEVEL_2_REQUIRED_SUCCESSES:
-      (p.successes||0)>=rule.successes&&(p.observations||0)>=rule.observations&&
-      (!rule.coverage||(d.counts.secure+d.counts.automated)/d.total>=rule.coverage)&&
-      (!rule.strategyCompetence||((p.fullTasks||0)>=rule.minStrategyTasks&&(p.correctFullTasks||0)/p.fullTasks>=rule.strategyCompetence));
-    if(yes){state.unlockedLevels.push(level);opened.push(level);}
-  }return opened;
-}
+export function unlockLevels(state){state.unlockedLevels=[1,2,3,4,5,6];return [];}
 export function recognition(state,report){
-  if([5,10,20,30,50,100].includes(state.currentStreak))return `Schon ${state.currentStreak} Tage in Folge erfolgreich gelernt!`;
+  if(report.development?.adequate&&report.development.after>report.development.before)return 'Bei gleichen Aufgaben hast du heute sicherer gerechnet.';
+  if(report.level<=4&&report.development?.adequate&&report.development.faster>=3)return 'Gleiche Aufgaben hast du wiederholt schneller begonnen.';
   const messages=['Stark geübt!','Du bleibst dran.','Heute wieder konzentriert gelernt.','Übung für Übung kommst du weiter.','Dranbleiben lohnt sich.'];
   return messages[(state.successNumber-1)%messages.length];
 }
@@ -34,8 +23,8 @@ export function awardSuccess(state,report,date=dayKey()){
   const gap=state.lastQualifyingSuccessDate?dayOrdinal(date)-dayOrdinal(state.lastQualifyingSuccessDate):null;
   if(gap!==0){state.currentStreak=gap===1?state.currentStreak+1:1;state.lastQualifyingSuccessDate=date;}
   state.longestStreak=Math.max(state.longestStreak,state.currentStreak);
-  state.level2QualifyingSuccesses=Math.min(C.LEVEL_2_REQUIRED_SUCCESSES,state.level2QualifyingSuccesses+1);
+  if(!state.learningDays.includes(date))state.learningDays.push(date);
   (state.levelProgress[report.level]||={observations:0,successes:0}).successes++;
-  const card={phaseId:report.id,date,number:state.successNumber,streak:state.currentStreak,accuracy:report.accuracy,correct:report.correct,total:report.total,level:report.level,phase:report.phase,message:recognition(state,report)};
+  const card=eventSnapshot({sessionId:report.sessionId,timestamp:new Date().toISOString(),phaseId:report.id,date,number:state.successNumber,streak:state.currentStreak,accuracy:report.accuracy,correct:report.correct,total:report.total,level:report.level,phase:report.phase,message:recognition(state,report)});
   state.cards.push(card);report.successNumber=card.number;return card;
 }

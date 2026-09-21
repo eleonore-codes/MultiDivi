@@ -1,5 +1,5 @@
 import {median} from './learning-engine.js';
-export function summarize(rows){const correct=rows.filter(r=>r.ok).length;return {total:rows.length,correct,accuracy:rows.length?Math.round(correct/rows.length*100):null,wrong:rows.length-correct,firstMs:median(rows.filter(r=>r.ok&&r.firstMs!==null).map(r=>r.firstMs)),totalMs:median(rows.filter(r=>r.ok&&r.totalMs!==null).map(r=>r.totalMs)),steps:rows.reduce((n,r)=>n+(r.steps||1),0),drills:rows.filter(r=>r.drill).length,fullTasks:rows.filter(r=>!r.drill).length};}
+export function summarize(rows){const correct=rows.filter(r=>r.ok).length;return {total:rows.length,correct,accuracy:rows.length?Math.round(correct/rows.length*100):null,wrong:rows.length-correct,firstMs:median(rows.filter(r=>r.ok&&r.firstMs!==null).map(r=>r.firstMs)),totalMs:median(rows.filter(r=>r.ok&&r.totalMs!==null).map(r=>r.totalMs)),steps:rows.reduce((n,r)=>n+(r.steps||1),0),drills:rows.filter(r=>r.drill).length,correctFullTasks:rows.filter(r=>!r.drill&&r.ok).length,fullTasks:rows.filter(r=>!r.drill).length};}
 export function compare(a,b){
   const ids=[...new Set(a.map(x=>x.id))].filter(id=>b.some(x=>x.id===id));
   // Equal weight per shared task prevents changing frequencies from fabricating improvement.

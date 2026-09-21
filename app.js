@@ -15,8 +15,8 @@ let state=loaded.state,blocked=loaded.blocked,view='main',paused=true,phaseClock
 const duration=durations(dev),app=document.querySelector('#app'),notice=document.querySelector('#notice');
 function warn(message){notice.hidden=false;notice.textContent=message;}
 if(loaded.error)warn(loaded.error);
-if(loaded.legacy)warn('MultiDivi ist bereit. Für diese neue Version beginnt der bisherige Test-Lernstand neu.');
-function save(){if(!blocked&&state&&!saveState(state,storage,key))warn('Speichern klappt gerade nicht. Lass die Seite offen und hole einen Erwachsenen dazu.');}
+function save(){if(blocked||!state)return false;if(!saveState(state,storage,key)){blocked=true;warn('Der Lernstand konnte nicht sicher gespeichert werden. Bitte diese Seite neu laden.');return false;}return true;}
+if(state)save();
 if(state?.session?.active){state.session.active.work.interrupted=true;state.session.active.input.lastTap=null;}
 if(state?.session?.trial){state.session.trial.work.interrupted=true;state.session.trial=null;}
 const btn=(label,action,cls='primary',extra='')=>`<button class="${cls}" data-action="${action}" ${extra}>${label}</button>`;
@@ -69,17 +69,15 @@ function boardHTML(t,w){
 function inputHTML(){return `<div class="input-area"><p id="place" class="place" aria-live="polite"></p><output id="number" class="number-output" aria-label="Deine eingegebene Zahl"></output><p class="entry-help">Beginne mit den Einern.</p><div class="keypad" aria-label="Zahlentasten">${[1,2,3,4,5,6,7,8,9,0].map(n=>`<button data-digit="${n}" class="${n===0?'zero':''}">${n}</button>`).join('')}<button class="delete" data-action="delete" aria-label="Letzte Stelle löschen">Löschen</button></div>${btn('Fertig','submit')}</div>`;}
 function reportHTML(r){
   if(!r)return '';
-  return `<div class="panel"><h2>${r.successNumber?'Erfolg Nr. '+r.successNumber:'Gut geübt!'}</h2><p>${r.total} ${r.total===1?'Aufgabe':'Aufgaben'} gerechnet.<br><strong>${r.correct} ${r.level>=5?'ohne Korrektur richtig':'richtig'} · ${r.accuracy??0} %</strong></p>${r.successNumber?btn('Erfolgskarte ansehen','card','secondary',`data-number="${r.successNumber}"`):'<p>Du hast geübt. Bleib dran.</p>'}</div>`;
-}
-function unlockHTML(r){
-  if(!r?.unlocked?.length)return '';
-  return r.unlocked.map(l=>`<div class="panel"><h2>Neues Level freigeschaltet!</h2><p>${LEVEL_NAMES[l]}</p>${l===2?'<p>Du hast 5 starke Lernerfolge gesammelt.</p>':''}${btn('Level '+l+' ausprobieren','try-level','secondary',`data-level="${l}"`)}<p>Eine Beispielaufgabe. Danach geht es hier weiter.</p></div>`).join('');
+  const event=state.cards.find(c=>c.phaseId===r.id);
+  r={...r,successNumber:event?.number};
+  return `<div class="panel"><h2>${r.successNumber?'Erfolg Nr. '+r.successNumber:'Training abgeschlossen.'}</h2><p>${r.total} ${r.total===1?'Aufgabe':'Aufgaben'} gerechnet.<br><strong>${r.correct} ${r.level>=5?'ohne Korrektur richtig':'richtig'} · ${r.accuracy??0} %</strong></p>${r.successNumber?btn('Erfolgskarte ansehen','card','secondary',`data-number="${r.successNumber}"`):'<p>Du hast geübt. Bleib dran.</p>'}</div>`;
 }
 function render(){
   renderToken++;
   if(blocked){display('<h1>Lernstand prüfen</h1><p>Bitte hole einen Erwachsenen dazu. Die gespeicherten Daten werden nicht überschrieben.</p>');return;}
   if(view==='progress'){display(progressHTML(state)+btn('Zurück','back','secondary'));return;}
-  if(view==='reset-warning'){display('<h1>Lerndaten zurücksetzen?</h1><p>Alle Lerntage, Erfolge und Freischaltungen dieses Browsers werden gelöscht. Dies ist nicht rückgängig zu machen.</p>'+btn('Abbrechen','progress','secondary')+btn('Ich möchte zurücksetzen','reset-confirm','secondary'));return;}
+  if(view==='reset-warning'){display('<h1>Lerndaten zurücksetzen?</h1><p>Alle Lerntage, Erfolge und Lernstände dieses Browsers werden gelöscht. Dies ist nicht rückgängig zu machen.</p>'+btn('Abbrechen','progress','secondary')+btn('Ich möchte zurücksetzen','reset-confirm','secondary'));return;}
   if(view==='reset-confirm'){display('<h1>Wirklich neu beginnen?</h1><p>Erfolg Nr. 0 · 0 Lerntage · keine Serie.</p>'+btn('Abbrechen','progress','secondary')+btn('Ja, alle Lerndaten endgültig löschen','reset-final','secondary'));return;}
   if(view==='card'){return;}
   const s=state.session;
@@ -91,12 +89,12 @@ function render(){
     if(!w.feedback&&p)updateInput();startClock();return;
   }
   if(s?.stage==='between'){
-    display(`<p class="eyebrow">Teil 1 geschafft</p><h1>3 Minuten geschafft!</h1>${reportHTML(s.reports.a)}<p>Jetzt übst du 2 Minuten die Aufgaben, die noch Training brauchen.</p>${btn('2-Minuten-Training starten','focus')}${unlockHTML(s.reports.a)}${btn('Fortschritt','progress','plain')}`);return;
+    display(`<p class="eyebrow">Teil 1 geschafft</p><h1>3 Minuten geschafft!</h1>${reportHTML(s.reports.a)}<p>Jetzt übst du 2 Minuten die Aufgaben, die noch Training brauchen.</p>${btn('2-Minuten-Training starten','focus')}${btn('Fortschritt','progress','plain')}`);return;
   }
   if(s?.stage==='done'&&state.completedDates.includes(dayKey())){
-    display(`<h1>Für heute geschafft!</h1>${reportHTML(s.reports.b)}<p>${s.comparison.message}</p><p><strong>${TEXT.done}</strong></p>${s.reports.a.successNumber?btn('Karte aus Teil 1','card','secondary',`data-number="${s.reports.a.successNumber}"`):''}${unlockHTML(s.reports.b)}${btn('Fortschritt','progress','plain')}`);return;
+    display(`<h1>Für heute geschafft!</h1>${reportHTML(s.reports.b)}<p>${s.comparison.message}</p><p><strong>${TEXT.done}</strong></p>${s.reports.a.successNumber?btn('Karte aus Teil 1','card','secondary',`data-number="${s.reports.a.successNumber}"`):''}${btn('Fortschritt','progress','plain')}`);return;
   }
-  display(`<p class="eyebrow">Dein tägliches Training</p><h1>MultiDivi</h1><p>3 Minuten gemischt.<br>2 Minuten gezielt üben.</p><div class="level-list" aria-label="Lernstufe auswählen">${Object.entries(LEVEL_NAMES).map(([l,name])=>`<button data-action="level" data-level="${l}" aria-pressed="${state.selectedLevel===Number(l)}" ${state.unlockedLevels.includes(Number(l))?'':'disabled'}><strong>Level ${l}</strong><span>${name}${state.unlockedLevels.includes(Number(l))?'':' · noch gesperrt'}</span></button>`).join('')}</div>${btn('Training starten','start')}${btn('Fortschritt','progress','plain')}<p class="footnote">Ohne Anmeldung. Dein Lernstand bleibt hier.</p>${dev?'<p>Testmodus · 30 + 20 Sekunden · eigener Lernstand</p>':''}${pendingWorker?btn('Neue Version laden','update','secondary'):''}`);
+  display(`<p class="eyebrow">Dein tägliches Training</p><h1>MultiDivi</h1><p>3 Minuten gemischt.<br>2 Minuten gezielt üben.</p><div class="level-list" aria-label="Lernstufe auswählen">${Object.entries(LEVEL_NAMES).map(([l,name])=>`<button data-action="level" data-level="${l}" aria-pressed="${state.selectedLevel===Number(l)}" ><strong>Level ${l}</strong><span>${name}</span></button>`).join('')}</div>${btn('Training starten','start')}${btn('Fortschritt','progress','plain')}<p class="footnote">Ohne Anmeldung. Dein Lernstand bleibt hier.</p>${dev?'<p>Testmodus · 30 + 20 Sekunden · eigener Lernstand</p>':''}${pendingWorker?btn('Neue Version laden','update','secondary'):''}`);
 }
 function updateInput(){const a=active();document.querySelector('#number').textContent=inputDisplay(a.input);document.querySelector('#place').textContent=activePlace(a.input);const b=document.querySelector('[data-action="submit"]');if(b)b.disabled=!a.input.digits.length;}
 function digit(n){
@@ -114,7 +112,9 @@ function submit(){
   save();render();
 }
 async function showCard(number){
-  const card=state.cards.find(c=>c.number===number);if(!card)return;
+  if(!save())return;
+  const persisted=loadState(storage,key);
+  const card=persisted.state?.cards.find(c=>c.number===number);if(!card)return;
   stopClock();view='card';
   try{
     const blob=await createCard(card);if(cardURL)URL.revokeObjectURL(cardURL);cardURL=URL.createObjectURL(blob);cardFile=new File([blob],`multidivi-erfolg-${card.number}.png`,{type:'image/png'});

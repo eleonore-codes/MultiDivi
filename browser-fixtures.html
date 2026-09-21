@@ -1,0 +1,17 @@
+<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>V3 Browserprüfungen</title><link rel="stylesheet" href="../styles.css"><main><h1>Lokale Testdaten</h1><p>Nur der separate Entwicklungslernstand wird ersetzt.</p><div id="buttons"></div><p id="status"></p><a class="button" href="../?dev=1">Test-App öffnen</a></main><script type="module">
+import {freshState,saveState,STORAGE_KEY,dayKey} from '../storage.js';
+import {startSession,recordTask,finishPhase} from '../session.js';
+import {BY_ID,TASKS} from '../content.js';
+import {newWork,acceptValue} from '../strategy.js';
+import {newInput} from '../place-value.js';
+if(['localhost','127.0.0.1'].includes(location.hostname)){
+const cases={'Frischer Lernstand':'fresh','Level 1':'1-7-8-product','Level 2':'2-7-8-2','Level 3':'3-8-3-s','Level 4':'4-26-4-p','Level 5':'5-23-14','Level 6':'6-12-13','Erfolgsbericht':null};
+for(const [name,id] of Object.entries(cases)){const b=document.createElement('button');b.textContent=name;b.onclick=()=>{
+ const s=freshState();s.unlockedLevels=[1,2,3,4,5,6];if(id==='fresh'){s.revision=JSON.parse(localStorage.getItem(STORAGE_KEY+'-dev')||'{}').revision||0;saveState(s,localStorage,STORAGE_KEY+'-dev');document.querySelector('#status').textContent='Frischer Lernstand vorbereitet.';return;}const level=id?BY_ID[id].level:1;
+ startSession(s,level,dayKey(),'fixture-'+Date.now());
+ if(id){s.session.active={taskId:id,work:newWork(BY_ID[id]),input:newInput()};s.session.elapsed=30001;}
+ else{for(let i=0;i<12;i++){const t=TASKS[i],w=newWork(t);acceptValue(t,w,t.answer,{firstMs:1500,totalMs:3500});recordTask(s,t,w);}finishPhase(s);}
+ s.revision=JSON.parse(localStorage.getItem(STORAGE_KEY+'-dev')||'{}').revision||0;saveState(s,localStorage,STORAGE_KEY+'-dev');document.querySelector('#status').textContent=name+' vorbereitet.';
+};document.querySelector('#buttons').append(b);}
+}else document.querySelector('main').textContent='Nur lokal verfügbar.';
+</script></html>

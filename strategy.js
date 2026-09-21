@@ -20,6 +20,14 @@ export function acceptValue(task,w,value,timing={}){
   const ok=p.expected===null?Number.isInteger(value)&&value>0&&value*task.divisor<=w.remaining:value===p.expected;
   w.checks++;w.totalMs+=timing.totalMs||0;if(w.firstMs===null)w.firstMs=timing.firstMs??null;w.interrupted ||= !!timing.interrupted;
   const evidence={component:p.component,ok,possiblePlaceValueError:p.expected!==null&&possiblePlaceValueError(p.expected,value),expected:p.expected,actual:value,label:p.label,remaining:w.remaining,firstMs:timing.firstMs??null,totalMs:timing.totalMs??null};
+  if(task.level===5&&!task.drill&&w.stage==='partials'){
+    const part=task.partials[w.selected];
+    w.diagnosticSeen??={};
+    if(part.a<=10&&part.b<=10&&!w.diagnosticSeen[w.selected]){
+      evidence.underlyingFactId=`1-${part.a}-${part.b}-product`;
+      w.diagnosticSeen[w.selected]=true;
+    }
+  }
   if(!ok){
     if(evidence.possiblePlaceValueError)evidence.errorType='place-value';
     else if(p.component==='partial-product')evidence.errorType='multiplication-fact';

@@ -1,6 +1,6 @@
 const BASE=new URL('./',self.location.href);
 const PREFIX='multidivi-'+BASE.pathname+'-';
-const CACHE=PREFIX+'v2.0.0';
+const CACHE=PREFIX+'v3.0.0';
 const FILES=['./','index.html','styles.css','app.js','config.js','content.js','learning-engine.js','statistics.js','storage.js','session.js','rewards.js','place-value.js','strategy.js','progress.js','share-card.js','manifest.json','icon.svg','icon-192.png','icon-512.png'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(FILES.map(p=>new URL(p,BASE).href)))));
 self.addEventListener('message',event=>{if(event.data?.type==='ACTIVATE_UPDATE')self.skipWaiting();});
