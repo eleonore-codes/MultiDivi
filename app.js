@@ -4,7 +4,7 @@ import {selectTask} from './learning-engine.js';
 import {loadState,saveState,resetState,exportLearningData,STORAGE_KEY,dayKey} from './storage.js';
 import {startSession,startFocus,recordTask,recordEvidence,finishPhase} from './session.js';
 import {newInput,enterDigit,backspace,inputValue,inputDisplay,activePlace} from './place-value.js';
-import {newWork,promptFor,acceptValue,selectPartial} from './strategy.js';
+import {newWork,promptFor,acceptValue,selectPartial,completeRemainderTask} from './strategy.js';
 import {progressHTML} from './progress.js';
 import {createCard,canShareFile} from './share-card.js';
 const local=['localhost','127.0.0.1'].includes(location.hostname);
@@ -17,6 +17,15 @@ function warn(message){notice.hidden=false;notice.textContent=message;}
 if(loaded.error)warn(loaded.error);
 if(loaded.legacy)warn('Dein älterer Lernstand wurde übernommen. Das Original bleibt gesichert.');
 function save(){if(blocked||!state)return false;if(!saveState(state,storage,key)){blocked=true;warn('Der Lernstand konnte nicht sicher gespeichert werden. Bitte diese Seite neu laden.');return false;}return true;}
+if(state?.session){
+  state.session.drills=(state.session.drills||[]).map(t=>completeRemainderTask(t,BY_ID));
+  const a=state.session.active,t=a?.task,full=completeRemainderTask(t,BY_ID);
+  if(t&&full!==t&&!a.work.done){
+    // Retain unfinished old component input for recovery; restart this task in the clear full format.
+    state.session.previousComponentWork=structuredClone(a);
+    state.session.active={taskId:full.id,work:newWork(full),input:newInput()};
+  }
+}
 if(state)save();
 if(state?.session?.active){state.session.active.work.interrupted=true;state.session.active.input.lastTap=null;}
 if(state?.session?.trial){state.session.trial.work.interrupted=true;state.session.trial=null;}
@@ -96,7 +105,7 @@ function render(){
   if(s?.stage==='done'&&state.completedDates.includes(dayKey())){
     display(`<h1>Für heute geschafft!</h1>${reportHTML(s.reports.b)}<p>${s.comparison.message}</p><p><strong>${TEXT.done}</strong></p>${s.reports.a.successNumber?btn('Karte aus Teil 1','card','secondary',`data-number="${s.reports.a.successNumber}"`):''}${btn('Fortschritt','progress','plain')}`);return;
   }
-  display(`<p class="eyebrow">Dein tägliches Training</p><h1>MultiDivi</h1><p>3 Minuten gemischt.<br>2 Minuten gezielt üben.</p><div class="level-list" aria-label="Lernstufe auswählen">${Object.entries(LEVEL_NAMES).map(([l,name])=>`<button data-action="level" data-level="${l}" aria-pressed="${state.selectedLevel===Number(l)}" ><strong>Level ${l}</strong><span>${name}</span></button>`).join('')}</div>${btn('Training starten','start')}${btn('Fortschritt','progress','plain')}<p class="footnote">Version 3.0.2 · Ohne Anmeldung. Dein Lernstand bleibt hier.</p>${dev?'<p>Testmodus · 30 + 20 Sekunden · eigener Lernstand</p>':''}${pendingWorker?btn('Neue Version laden','update','secondary'):''}`);
+  display(`<p class="eyebrow">Dein tägliches Training</p><h1>MultiDivi</h1><p>3 Minuten gemischt.<br>2 Minuten gezielt üben.</p><div class="level-list" aria-label="Lernstufe auswählen">${Object.entries(LEVEL_NAMES).map(([l,name])=>`<button data-action="level" data-level="${l}" aria-pressed="${state.selectedLevel===Number(l)}" ><strong>Level ${l}</strong><span>${name}</span></button>`).join('')}</div>${btn('Training starten','start')}${btn('Fortschritt','progress','plain')}<p class="footnote">Version 3.0.3 · Ohne Anmeldung. Dein Lernstand bleibt hier.</p>${dev?'<p>Testmodus · 30 + 20 Sekunden · eigener Lernstand</p>':''}${pendingWorker?btn('Neue Version laden','update','secondary'):''}`);
 }
 function isRemainder(){return task()?.level===2&&!task()?.drill;}
 function remainder(){

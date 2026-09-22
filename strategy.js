@@ -57,8 +57,15 @@ export function strategyDrills(rows,taskById){
   for(const r of rows)for(const e of r.errors||[]){
 
     const parent=taskById[r.id];if(!parent)continue;
+    if(parent.level===2){drills.set(parent.id,parent);continue;}
     const id=`drill-${parent.level}-${e.component}-${e.label}`;
     drills.set(id,{...parent,id,drill:true,component:e.component,label:e.label,answer:e.expected,dividend:e.remaining??parent.dividend,solution:e.expected===null?'Wähle eine positive Anzahl, deren Vielfaches noch hineinpasst.':(e.label.includes('□')?e.label.replace('□',String(e.expected)):e.label+' '+e.expected),family:`component-${e.component}`});
   }
   return [...drills.values()];
+}
+
+// Old focus pools may contain isolated quotient/rest drills. Restore their canonical task.
+export function completeRemainderTask(task,taskById){
+  if(task?.level!==2||!task.drill)return task;
+  return taskById[`2-${task.a}-${task.b}-${task.remainder}`]||task;
 }
