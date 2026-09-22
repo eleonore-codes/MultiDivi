@@ -1,7 +1,7 @@
 import {CONFIG as C,LEVEL_NAMES,TEXT,durations} from './config.js';
 import {BY_ID,LEVEL_TASKS} from './content.js';
 import {selectTask} from './learning-engine.js';
-import {loadState,saveState,resetState,STORAGE_KEY,dayKey} from './storage.js';
+import {loadState,saveState,resetState,exportLearningData,STORAGE_KEY,dayKey} from './storage.js';
 import {startSession,startFocus,recordTask,recordEvidence,finishPhase} from './session.js';
 import {newInput,enterDigit,backspace,inputValue,inputDisplay,activePlace} from './place-value.js';
 import {newWork,promptFor,acceptValue,selectPartial} from './strategy.js';
@@ -15,6 +15,7 @@ let state=loaded.state,blocked=loaded.blocked,view='main',paused=true,phaseClock
 const duration=durations(dev),app=document.querySelector('#app'),notice=document.querySelector('#notice');
 function warn(message){notice.hidden=false;notice.textContent=message;}
 if(loaded.error)warn(loaded.error);
+if(loaded.legacy)warn('Dein älterer Lernstand wurde übernommen. Das Original bleibt gesichert. Frühere Gesamtantwortzeiten werden nicht als neue Abrufzeiten gewertet.');
 function save(){if(blocked||!state)return false;if(!saveState(state,storage,key)){blocked=true;warn('Der Lernstand konnte nicht sicher gespeichert werden. Bitte diese Seite neu laden.');return false;}return true;}
 if(state)save();
 if(state?.session?.active){state.session.active.work.interrupted=true;state.session.active.input.lastTap=null;}
@@ -55,6 +56,7 @@ function begin(){
   else render();
 }
 function boardHTML(t,w){
+  if(t.level===2&&!t.drill)return w.stage==='rest'?`<p class="eyebrow">Rest eingeben</p><p>Ergebnis: <strong>${w.quotient}</strong> · Rest: <strong>□</strong></p>`:'<p>Gib zuerst das Ergebnis ohne Rest ein. Danach kommt der Rest.</p>';
   if(t.drill)return '<p class="eyebrow">Ein Rechenschritt zum Üben</p>';
   if(t.level===5){
     if(w.stage==='decompose'){const i=w.decomp.length;return `<p>Zerlege ${i<2?t.a:t.b} in Zehner und Einer.</p><p>${i%2===1?w.decomp.at(-1)+' + □':'Zuerst die Zehnerzahl, dann die Einerzahl.'}</p>`;}
@@ -66,7 +68,7 @@ function boardHTML(t,w){
   if(t.level===6)return `<p>Noch zu verteilen: <strong>${w.remaining}</strong></p>${w.stage==='choose'?'<p>Wie oft passt die Zahl hinein?<br>Du darfst mit einem Teil anfangen.</p>':''}${w.chunks.length?`<details><summary>Bisheriger Rechenweg</summary>${w.chunks.map(c=>`<p>${t.divisor} × ${c.q} = ${c.product}<br>${c.before} − ${c.product} = ${c.after}</p>`).join('')}</details>`:''}`;
   return '';
 }
-function inputHTML(){return `<div class="input-area"><p id="place" class="place" aria-live="polite"></p><output id="number" class="number-output" aria-label="Deine eingegebene Zahl"></output><p class="entry-help">Beginne mit den Einern.</p><div class="keypad" aria-label="Zahlentasten">${[1,2,3,4,5,6,7,8,9,0].map(n=>`<button data-digit="${n}" class="${n===0?'zero':''}">${n}</button>`).join('')}<button class="delete" data-action="delete" aria-label="Letzte Stelle löschen">Löschen</button></div>${btn('Fertig','submit')}</div>`;}
+function inputHTML(){return `<div class="input-area"><p id="place" class="place" aria-live="polite"></p><output id="number" class="number-output" aria-label="Deine eingegebene Zahl"></output><p class="entry-help">Beginne mit den Einern.</p><div class="keypad" aria-label="Zahlentasten">${[1,2,3,4,5,6,7,8,9,0].map(n=>`<button data-digit="${n}" class="${n===0?'zero':''}">${n}</button>`).join('')}<button class="delete" data-action="delete" aria-label="Letzte Stelle löschen">Löschen</button></div>${btn(task()?.level===2&&!task()?.drill?(active().work.stage==='rest'?'Rest bestätigen':'Weiter zum Rest'):'Fertig','submit')}</div>`;}
 function reportHTML(r){
   if(!r)return '';
   const event=state.cards.find(c=>c.phaseId===r.id);
@@ -75,7 +77,7 @@ function reportHTML(r){
 }
 function render(){
   renderToken++;
-  if(blocked){display('<h1>Lernstand prüfen</h1><p>Bitte hole einen Erwachsenen dazu. Die gespeicherten Daten werden nicht überschrieben.</p>');return;}
+  if(blocked){display('<h1>Lernstand prüfen</h1><p>Die gespeicherten Daten werden nicht überschrieben. Du kannst sie hier als Datei sichern.</p><p id="storage-diagnostic"></p>'+btn('Lerndaten sichern','export-data','secondary')+btn('Erneut laden','reload','secondary'));document.querySelector('#storage-diagnostic').textContent=loaded.diagnostic||'Speichern nicht möglich oder Lernstand in einem anderen Fenster geändert.';return;}
   if(view==='progress'){display(progressHTML(state)+btn('Zurück','back','secondary'));return;}
   if(view==='reset-warning'){display('<h1>Lerndaten zurücksetzen?</h1><p>Alle Lerntage, Erfolge und Lernstände dieses Browsers werden gelöscht. Dies ist nicht rückgängig zu machen.</p>'+btn('Abbrechen','progress','secondary')+btn('Ich möchte zurücksetzen','reset-confirm','secondary'));return;}
   if(view==='reset-confirm'){display('<h1>Wirklich neu beginnen?</h1><p>Erfolg Nr. 0 · 0 Lerntage · keine Serie.</p>'+btn('Abbrechen','progress','secondary')+btn('Ja, alle Lerndaten endgültig löschen','reset-final','secondary'));return;}
@@ -126,6 +128,8 @@ app.addEventListener('click',async event=>{
   if(b.dataset.digit!==undefined){digit(Number(b.dataset.digit));return;}
   if(b.dataset.partial!==undefined){if(selectPartial(active().work,Number(b.dataset.partial))){active().input=newInput();save();render();}return;}
   switch(b.dataset.action){
+    case 'export-data':try{const blob=new Blob([exportLearningData(storage,key)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='multidivi-lerndaten-sicherung.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);}catch{warn('Der Browser verhindert auch das Lesen für die Sicherung. Bitte die Website-Daten nicht löschen.');}break;
+    case 'reload':location.reload();break;
     case 'level':state.selectedLevel=Number(b.dataset.level);save();render();break;
     case 'start':begin();break;
     case 'resume':paused=false;render();break;
