@@ -6,7 +6,7 @@ import {awardSuccess,unlockLevels} from './rewards.js';
 import {dayKey} from './storage.js';
 import {strategyDrills} from './strategy.js';
 export function startSession(state,level,date=dayKey(),id=crypto.randomUUID()){
-  if(![1,2,3,4,5,6].includes(level)||state.completedDates.includes(date))return false;
+  if(![1,2,3,4,5,6].includes(level))return false;
   if(state.session&&state.session.stage!=='done')return false;
   state.session={id,date,level,stage:'a',elapsed:0,rows:{a:[],b:[]},reports:{},active:null,focus:[],drills:[],trial:null};
   return true;

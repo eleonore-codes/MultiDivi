@@ -84,6 +84,7 @@ function reportHTML(r){
   r={...r,successNumber:event?.number};
   return `<div class="panel"><h2>${r.successNumber?'Erfolg Nr. '+r.successNumber:'Training abgeschlossen.'}</h2><p>${r.total} ${r.total===1?'Aufgabe':'Aufgaben'} gerechnet.<br><strong>${r.correct} ${r.level>=5?'ohne Korrektur richtig':'richtig'} · ${r.accuracy??0} %</strong></p>${r.successNumber?btn('Erfolgskarte ansehen','card','secondary',`data-number="${r.successNumber}"`):'<p>Du hast geübt. Bleib dran.</p>'}</div>`;
 }
+function levelChoiceHTML(){return `<div class="level-list" aria-label="Lernstufe auswählen">${Object.entries(LEVEL_NAMES).map(([l,name])=>`<button data-action="level" data-level="${l}" aria-pressed="${state.selectedLevel===Number(l)}" ><strong>Level ${l}</strong><span>${name}</span></button>`).join('')}</div>`;}
 function render(){
   renderToken++;
   if(blocked){display('<h1>Lernstand prüfen</h1><p>Die gespeicherten Daten werden nicht überschrieben. Du kannst sie hier als Datei sichern.</p><p id="storage-diagnostic"></p>'+btn('Lerndaten sichern','export-data','secondary')+btn('Erneut laden','reload','secondary'));document.querySelector('#storage-diagnostic').textContent=loaded.diagnostic||'Speichern nicht möglich oder Lernstand in einem anderen Fenster geändert.';return;}
@@ -102,10 +103,10 @@ function render(){
   if(s?.stage==='between'){
     display(`<p class="eyebrow">Teil 1 geschafft</p><h1>3 Minuten geschafft!</h1>${reportHTML(s.reports.a)}<p>Jetzt übst du 2 Minuten die Aufgaben, die noch Training brauchen.</p>${btn('2-Minuten-Training starten','focus')}${btn('Fortschritt','progress','plain')}`);return;
   }
-  if(s?.stage==='done'&&state.completedDates.includes(dayKey())){
-    display(`<h1>Für heute geschafft!</h1>${reportHTML(s.reports.b)}<p>${s.comparison.message}</p><p><strong>${TEXT.done}</strong></p>${s.reports.a.successNumber?btn('Karte aus Teil 1','card','secondary',`data-number="${s.reports.a.successNumber}"`):''}${btn('Fortschritt','progress','plain')}`);return;
+  if(s?.stage==='done'){
+    display(`<h1>Training geschafft!</h1>${reportHTML(s.reports.b)}<p>${s.comparison.message}</p><p>Du hast gezielt die Aufgaben „${LEVEL_NAMES[s.level]}“ geübt. Übe nun auch die anderen Level, die du für deine nächste Klassenarbeit können solltest.</p><h2>Welches Level möchtest du jetzt üben?</h2>${levelChoiceHTML()}${btn('Neues 3+2-Minuten-Training starten','start')}${s.reports.a.successNumber?btn('Karte aus Teil 1','card','secondary',`data-number="${s.reports.a.successNumber}"`):''}${btn('Fortschritt','progress','plain')}`);return;
   }
-  display(`<p class="eyebrow">Dein tägliches Training</p><h1>MultiDivi</h1><p>3 Minuten gemischt.<br>2 Minuten gezielt üben.</p><div class="level-list" aria-label="Lernstufe auswählen">${Object.entries(LEVEL_NAMES).map(([l,name])=>`<button data-action="level" data-level="${l}" aria-pressed="${state.selectedLevel===Number(l)}" ><strong>Level ${l}</strong><span>${name}</span></button>`).join('')}</div>${btn('Training starten','start')}${btn('Fortschritt','progress','plain')}<p class="footnote">Version 3.0.3 · Ohne Anmeldung. Dein Lernstand bleibt hier.</p>${dev?'<p>Testmodus · 30 + 20 Sekunden · eigener Lernstand</p>':''}${pendingWorker?btn('Neue Version laden','update','secondary'):''}`);
+  display(`<p class="eyebrow">Dein Training</p><h1>MultiDivi</h1><p>3 Minuten gemischt.<br>2 Minuten gezielt üben.</p>${levelChoiceHTML()}${btn('Training starten','start')}${btn('Fortschritt','progress','plain')}<p class="footnote">Version 3.0.4 · Ohne Anmeldung. Dein Lernstand bleibt hier.</p>${dev?'<p>Testmodus · 30 + 20 Sekunden · eigener Lernstand</p>':''}${pendingWorker?btn('Neue Version laden','update','secondary'):''}`);
 }
 function isRemainder(){return task()?.level===2&&!task()?.drill;}
 function remainder(){

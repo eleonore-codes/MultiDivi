@@ -18,5 +18,5 @@ export const CONFIG = Object.freeze({
 
 });
 export const LEVEL_NAMES={1:'Kleines Einmaleins',2:'Division mit Rest',3:'Zehnervielfache',4:'Größere Zahlen',5:'Malnehmen mit Rechenbrett',6:'Teilen in Schritten'};
-export const TEXT={correct:'✓ Richtig',wrong:'✕ Noch nicht',done:'Für heute geschafft. Bis zum nächsten Training!',finish:'Fertig'};
+export const TEXT={correct:'✓ Richtig',wrong:'✕ Noch nicht',done:'Training geschafft! Du kannst jetzt ein anderes Level üben.',finish:'Fertig'};
 export const durations=(dev=false)=>({a:dev?CONFIG.DEV_GENERAL_MS:CONFIG.GENERAL_SESSION_MINUTES*60000,b:dev?CONFIG.DEV_FOCUS_MS:CONFIG.FOCUS_SESSION_MINUTES*60000});
