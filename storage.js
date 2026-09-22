@@ -37,19 +37,15 @@ export function eventSnapshot(card){
 }
 export function migrateLegacy(raw){
   if(raw?.version!==1||!raw.model||Array.isArray(raw.model)||!Array.isArray(raw.history)||!Array.isArray(raw.recentLevel1))throw Error('Das ältere Datenformat wird nicht erkannt.');
-  const state=freshState();
-  // Preserve the entire old profile, including unfinished work and historical mastery.
-  state.legacyArchive=structuredClone(raw);
+  const state=freshState();state.legacyArchive=structuredClone(raw);
   for(const [id,record] of Object.entries(raw.model)){
     if(!Number.isInteger(record.attempts)||record.attempts<0||!Array.isArray(record.recent))throw Error('Ungültige ältere Aufgabenbeobachtung.');
     const level=id.startsWith('r-')?2:1,newId=level===2?id.replace(/^r-/,'2-'):`1-${id}`;
     state.factMastery[newId]={...structuredClone(record),level,fastStreak:0,recent:record.recent.map(r=>{
       if(typeof r.ok!=='boolean')throw Error('Ungültiges älteres Aufgabenergebnis.');
-      // Old total-answer latency is not a first-digit retrieval measurement.
       return {ok:r.ok,firstMs:null,totalMs:Number.isFinite(r.ms)&&r.ms>=0?r.ms:null};
     })};
-    const progress=state.levelProgress[level]||={observations:0,successes:0,fullTasks:0,correctFullTasks:0};
-    progress.observations+=record.attempts;
+    const progress=state.levelProgress[level]||={observations:0,successes:0,fullTasks:0,correctFullTasks:0};progress.observations+=record.attempts;
   }
   for(const day of [...raw.history,...(raw.day?[raw.day]:[])]){
     if(!/^\d{4}-\d{2}-\d{2}$/.test(day.date||''))continue;
@@ -63,8 +59,7 @@ export function exportLearningData(storage,key=STORAGE_KEY){
   return JSON.stringify({app:'MultiDivi',exportedAt:new Date().toISOString(),entries:{[key]:storage.getItem(key),[LEGACY_KEY]:storage.getItem(LEGACY_KEY)}},null,2);
 }
 export function loadState(storage,key=STORAGE_KEY){
-  try{
-    const raw=storage.getItem(key),legacy=!raw&&key===STORAGE_KEY?storage.getItem(LEGACY_KEY):null;
+  try{const raw=storage.getItem(key),legacy=!raw&&key===STORAGE_KEY?storage.getItem(LEGACY_KEY):null;
     return {state:raw?migrate(JSON.parse(raw)):legacy?migrateLegacy(JSON.parse(legacy)):freshState(),legacy:!!legacy,blocked:false};
   }catch(error){return {state:null,blocked:true,error:'Der Lernstand kann nicht gelesen werden. Die Originaldaten bleiben erhalten.',diagnostic:error instanceof SyntaxError?'Die gespeicherten Daten sind kein gültiges JSON.':error.message};}
 }

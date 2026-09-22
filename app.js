@@ -15,7 +15,7 @@ let state=loaded.state,blocked=loaded.blocked,view='main',paused=true,phaseClock
 const duration=durations(dev),app=document.querySelector('#app'),notice=document.querySelector('#notice');
 function warn(message){notice.hidden=false;notice.textContent=message;}
 if(loaded.error)warn(loaded.error);
-if(loaded.legacy)warn('Dein älterer Lernstand wurde übernommen. Das Original bleibt gesichert. Frühere Gesamtantwortzeiten werden nicht als neue Abrufzeiten gewertet.');
+if(loaded.legacy)warn('Dein älterer Lernstand wurde übernommen. Das Original bleibt gesichert.');
 function save(){if(blocked||!state)return false;if(!saveState(state,storage,key)){blocked=true;warn('Der Lernstand konnte nicht sicher gespeichert werden. Bitte diese Seite neu laden.');return false;}return true;}
 if(state)save();
 if(state?.session?.active){state.session.active.work.interrupted=true;state.session.active.input.lastTap=null;}
@@ -56,7 +56,7 @@ function begin(){
   else render();
 }
 function boardHTML(t,w){
-  if(t.level===2&&!t.drill)return w.stage==='rest'?`<p class="eyebrow">Rest eingeben</p><p>Ergebnis: <strong>${w.quotient}</strong> · Rest: <strong>□</strong></p>`:'<p>Gib zuerst das Ergebnis ohne Rest ein. Danach kommt der Rest.</p>';
+  if(t.level===2&&!t.drill)return '<p>Ergebnis eingeben · R drücken · Rest eingeben.</p>';
   if(t.drill)return '<p class="eyebrow">Ein Rechenschritt zum Üben</p>';
   if(t.level===5){
     if(w.stage==='decompose'){const i=w.decomp.length;return `<p>Zerlege ${i<2?t.a:t.b} in Zehner und Einer.</p><p>${i%2===1?w.decomp.at(-1)+' + □':'Zuerst die Zehnerzahl, dann die Einerzahl.'}</p>`;}
@@ -68,7 +68,7 @@ function boardHTML(t,w){
   if(t.level===6)return `<p>Noch zu verteilen: <strong>${w.remaining}</strong></p>${w.stage==='choose'?'<p>Wie oft passt die Zahl hinein?<br>Du darfst mit einem Teil anfangen.</p>':''}${w.chunks.length?`<details><summary>Bisheriger Rechenweg</summary>${w.chunks.map(c=>`<p>${t.divisor} × ${c.q} = ${c.product}<br>${c.before} − ${c.product} = ${c.after}</p>`).join('')}</details>`:''}`;
   return '';
 }
-function inputHTML(){return `<div class="input-area"><p id="place" class="place" aria-live="polite"></p><output id="number" class="number-output" aria-label="Deine eingegebene Zahl"></output><p class="entry-help">Beginne mit den Einern.</p><div class="keypad" aria-label="Zahlentasten">${[1,2,3,4,5,6,7,8,9,0].map(n=>`<button data-digit="${n}" class="${n===0?'zero':''}">${n}</button>`).join('')}<button class="delete" data-action="delete" aria-label="Letzte Stelle löschen">Löschen</button></div>${btn(task()?.level===2&&!task()?.drill?(active().work.stage==='rest'?'Rest bestätigen':'Weiter zum Rest'):'Fertig','submit')}</div>`;}
+function inputHTML(){return `<div class="input-area"><p id="place" class="place" aria-live="polite"></p><output id="number" class="number-output" aria-label="Deine eingegebene Zahl"></output><p class="entry-help">Beginne mit den Einern.</p><div class="keypad" aria-label="Zahlentasten">${[1,2,3,4,5,6,7,8,9,0].map(n=>`<button data-digit="${n}" class="${n===0?'zero':''}">${n}</button>`).join('')}${isRemainder()?'<button data-action="remainder" aria-label="R – Rest eingeben">R</button>':''}<button class="delete" data-action="delete" aria-label="Letzte Stelle löschen">Löschen</button></div>${btn('Fertig','submit')}</div>`;}
 function reportHTML(r){
   if(!r)return '';
   const event=state.cards.find(c=>c.phaseId===r.id);
@@ -96,9 +96,26 @@ function render(){
   if(s?.stage==='done'&&state.completedDates.includes(dayKey())){
     display(`<h1>Für heute geschafft!</h1>${reportHTML(s.reports.b)}<p>${s.comparison.message}</p><p><strong>${TEXT.done}</strong></p>${s.reports.a.successNumber?btn('Karte aus Teil 1','card','secondary',`data-number="${s.reports.a.successNumber}"`):''}${btn('Fortschritt','progress','plain')}`);return;
   }
-  display(`<p class="eyebrow">Dein tägliches Training</p><h1>MultiDivi</h1><p>3 Minuten gemischt.<br>2 Minuten gezielt üben.</p><div class="level-list" aria-label="Lernstufe auswählen">${Object.entries(LEVEL_NAMES).map(([l,name])=>`<button data-action="level" data-level="${l}" aria-pressed="${state.selectedLevel===Number(l)}" ><strong>Level ${l}</strong><span>${name}</span></button>`).join('')}</div>${btn('Training starten','start')}${btn('Fortschritt','progress','plain')}<p class="footnote">Ohne Anmeldung. Dein Lernstand bleibt hier.</p>${dev?'<p>Testmodus · 30 + 20 Sekunden · eigener Lernstand</p>':''}${pendingWorker?btn('Neue Version laden','update','secondary'):''}`);
+  display(`<p class="eyebrow">Dein tägliches Training</p><h1>MultiDivi</h1><p>3 Minuten gemischt.<br>2 Minuten gezielt üben.</p><div class="level-list" aria-label="Lernstufe auswählen">${Object.entries(LEVEL_NAMES).map(([l,name])=>`<button data-action="level" data-level="${l}" aria-pressed="${state.selectedLevel===Number(l)}" ><strong>Level ${l}</strong><span>${name}</span></button>`).join('')}</div>${btn('Training starten','start')}${btn('Fortschritt','progress','plain')}<p class="footnote">Version 3.0.2 · Ohne Anmeldung. Dein Lernstand bleibt hier.</p>${dev?'<p>Testmodus · 30 + 20 Sekunden · eigener Lernstand</p>':''}${pendingWorker?btn('Neue Version laden','update','secondary'):''}`);
 }
-function updateInput(){const a=active();document.querySelector('#number').textContent=inputDisplay(a.input);document.querySelector('#place').textContent=activePlace(a.input);const b=document.querySelector('[data-action="submit"]');if(b)b.disabled=!a.input.digits.length;}
+function isRemainder(){return task()?.level===2&&!task()?.drill;}
+function remainder(){
+  const a=active();if(!running()||!isRemainder()||a.work.feedback||a.quotientInput||a.work.stage==='rest'||inputValue(a.input)===null)return;
+  a.quotientInput=a.input;a.quotientTiming={firstMs:firstDigit,totalMs:performance.now()-answerClock,interrupted:a.work.interrupted};a.input=newInput();answerClock=performance.now();firstDigit=null;updateInput();save();
+}
+function deleteDigit(){
+  const a=active();if(!a||a.work.feedback)return;
+  if(isRemainder()&&a.quotientInput&&!a.input.digits.length){a.input=a.quotientInput;delete a.quotientInput;delete a.quotientTiming;a.work.interrupted=true;}
+  else backspace(a.input);updateInput();save();
+}
+function updateInput(){
+  const a=active(),rest=isRemainder(),hasR=rest&&(a.quotientInput||a.work.stage==='rest');
+  document.querySelector('#number').textContent=hasR?`${a.quotientInput?inputDisplay(a.quotientInput):a.work.quotient} R ${inputDisplay(a.input)}`:inputDisplay(a.input);
+  document.querySelector('#place').textContent=(rest?(hasR?'Rest · ':'Ergebnis · '):'')+activePlace(a.input);
+  if(rest){const heading=document.querySelector('.step-equation');if(heading)heading.textContent=task().label+' · Ergebnis und Rest';}
+  const b=document.querySelector('[data-action="submit"]');if(b)b.disabled=!a.input.digits.length||(rest&&!hasR);
+  const r=document.querySelector('[data-action="remainder"]');if(r)r.disabled=!!hasR||!a.input.digits.length;
+}
 function digit(n){
   if(!running()||answerClock===null||active().work.feedback)return;
   const now=performance.now();if(enterDigit(active().input,n,now)){if(firstDigit===null)firstDigit=now-answerClock;updateInput();save();}
@@ -107,6 +124,12 @@ function submit(){
   if(!running()||answerClock===null||active().work.feedback)return;
   const a=active(),value=inputValue(a.input);if(value===null)return;checkpoint();
   const t=task(),timing={firstMs:firstDigit,totalMs:performance.now()-answerClock,interrupted:a.work.interrupted};
+  if(isRemainder()&&a.work.stage!=='rest'){
+    if(!a.quotientInput)return;
+    const q=acceptValue(t,a.work,inputValue(a.quotientInput),{...a.quotientTiming,interrupted:a.work.interrupted});
+    if(!state.session.trial)recordEvidence(state,t,q);
+    a.work.feedback=null;
+  }
   const e=acceptValue(t,a.work,value,timing);if(!e)return;
   if(!state.session.trial)recordEvidence(state,t,e);
   answerClock=null;a.input=newInput();
@@ -134,7 +157,8 @@ app.addEventListener('click',async event=>{
     case 'start':begin();break;
     case 'resume':paused=false;render();break;
     case 'pause':pause();break;
-    case 'delete':if(active()&&!active().work.feedback){backspace(active().input);updateInput();save();}break;
+    case 'delete':deleteDigit();break;
+    case 'remainder':remainder();break;
     case 'submit':submit();break;
     case 'next':{
       checkpoint();const a=active();if(!a?.work.feedback)break;
@@ -159,7 +183,8 @@ app.addEventListener('click',async event=>{
 document.addEventListener('keydown',e=>{
   if(!running()||e.ctrlKey||e.metaKey||e.altKey||e.repeat)return;
   if(/^\d$/.test(e.key)){e.preventDefault();digit(Number(e.key));}
-  else if(e.key==='Backspace'&&active()&&!active().work.feedback){e.preventDefault();backspace(active().input);updateInput();save();}
+  else if(e.key.toLowerCase()==='r'&&isRemainder()){e.preventDefault();remainder();}
+  else if(e.key==='Backspace'&&active()&&!active().work.feedback){e.preventDefault();deleteDigit();}
   else if(e.key==='Enter'&&e.target===app){e.preventDefault();submit();}
 });
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&running())pause();else if(!document.hidden&&view==='main')render();});
