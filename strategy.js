@@ -69,3 +69,16 @@ export function completeRemainderTask(task,taskById){
   if(task?.level!==2||!task.drill)return task;
   return taskById[`2-${task.a}-${task.b}-${task.remainder}`]||task;
 }
+
+export function undoDivisionPart(task,w){
+  if(task.level!==6||task.drill||w.done)return false;
+  let removedSteps=0;
+  if(w.stage==='product'||w.stage==='subtract'){
+    removedSteps=w.stage==='product'?1:2;
+  }else if((w.stage==='choose'||w.stage==='sum')&&w.chunks.length){
+    const previous=w.chunks.pop();w.quotients.pop();w.remaining=previous.before;removedSteps=3;
+  }else return false;
+  w.checks=Math.max(w.errors.length,w.checks-removedSteps);
+  w.chunk=null;w.stage='choose';w.feedback=null;w.interrupted=true;
+  return true;
+}

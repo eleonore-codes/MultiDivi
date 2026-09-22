@@ -4,7 +4,7 @@ import {selectTask} from './learning-engine.js';
 import {loadState,saveState,resetState,exportLearningData,STORAGE_KEY,dayKey} from './storage.js';
 import {startSession,startFocus,recordTask,recordEvidence,finishPhase} from './session.js';
 import {newInput,enterDigit,backspace,inputValue,inputDisplay,activePlace} from './place-value.js';
-import {newWork,promptFor,acceptValue,selectPartial,completeRemainderTask} from './strategy.js';
+import {newWork,promptFor,acceptValue,selectPartial,completeRemainderTask,undoDivisionPart} from './strategy.js';
 import {progressHTML} from './progress.js';
 import {createCard,canShareFile} from './share-card.js';
 const local=['localhost','127.0.0.1'].includes(location.hostname);
@@ -74,7 +74,7 @@ function boardHTML(t,w){
     if(w.stage==='partials')return split+`<p>Wähle eine Teilaufgabe.</p><div class="board">${t.partials.map((p,i)=>`<button data-partial="${i}" ${w.partials[i]!==undefined?'disabled':''} class="${w.selected===i?'selected':''}">${p.label}<br><strong>${w.partials[i]!==undefined?'✓ '+w.partials[i]:'□'}</strong></button>`).join('')}</div>`;
     return split;
   }
-  if(t.level===6)return `<p>Noch zu verteilen: <strong>${w.remaining}</strong></p>${w.stage==='choose'?'<p>Wie oft passt die Zahl hinein?<br>Du darfst mit einem Teil anfangen.</p>':''}${w.chunks.length?`<details><summary>Bisheriger Rechenweg</summary>${w.chunks.map(c=>`<p>${t.divisor} × ${c.q} = ${c.product}<br>${c.before} − ${c.product} = ${c.after}</p>`).join('')}</details>`:''}`;
+  if(t.level===6)return `${!w.done&&(['product','subtract'].includes(w.stage)||w.chunks.length)?btn(['product','subtract'].includes(w.stage)?'Teilquotient ändern':'Letzte Teilrechnung zurücknehmen','undo-division','secondary'):''}<p>Noch zu verteilen: <strong>${w.remaining}</strong></p>${w.stage==='choose'?'<p>Wie oft passt die Zahl hinein?<br>Du darfst mit einem Teil anfangen.</p>':''}${w.chunks.length?`<details><summary>Bisheriger Rechenweg</summary>${w.chunks.map(c=>`<p>${t.divisor} × ${c.q} = ${c.product}<br>${c.before} − ${c.product} = ${c.after}</p>`).join('')}</details>`:''}`;
   return '';
 }
 function partialSumHTML(t){
@@ -108,9 +108,9 @@ function render(){
     display(`<p class="eyebrow">Teil 1 geschafft</p><h1>3 Minuten geschafft!</h1>${reportHTML(s.reports.a)}<p>Jetzt übst du 2 Minuten die Aufgaben, die noch Training brauchen.</p>${btn('2-Minuten-Training starten','focus')}${btn('Fortschritt','progress','plain')}`);return;
   }
   if(s?.stage==='done'){
-    display(`<h1>Training geschafft!</h1>${reportHTML(s.reports.b)}<p>${s.comparison.message}</p><p>Du hast gezielt die Aufgaben „${LEVEL_NAMES[s.level]}“ geübt. Übe nun auch die anderen Level, die du für deine nächste Klassenarbeit können solltest.</p><h2>Welches Level möchtest du jetzt üben?</h2>${levelChoiceHTML()}${btn('Neues 3+2-Minuten-Training starten','start')}${s.reports.a.successNumber?btn('Karte aus Teil 1','card','secondary',`data-number="${s.reports.a.successNumber}"`):''}${btn('Fortschritt','progress','plain')}`);return;
+    display(`<h1>Training geschafft!</h1>${reportHTML(s.reports.b)}<p>Du hast gezielt die Aufgaben „${LEVEL_NAMES[s.level]}“ geübt. Übe nun auch die anderen Level, die du für deine nächste Klassenarbeit können solltest.</p><h2>Welches Level möchtest du jetzt üben?</h2>${levelChoiceHTML()}${btn('Neues 3+2-Minuten-Training starten','start')}${s.reports.a.successNumber?btn('Karte aus Teil 1','card','secondary',`data-number="${s.reports.a.successNumber}"`):''}${btn('Fortschritt','progress','plain')}`);return;
   }
-  display(`<p class="eyebrow">Dein Training</p><h1>MultiDivi</h1><p>3 Minuten gemischt.<br>2 Minuten gezielt üben.</p>${levelChoiceHTML()}${btn('Training starten','start')}${btn('Fortschritt','progress','plain')}<p class="footnote">Version 3.0.5 · Ohne Anmeldung. Dein Lernstand bleibt hier.</p>${dev?'<p>Testmodus · 30 + 20 Sekunden · eigener Lernstand</p>':''}${pendingWorker?btn('Neue Version laden','update','secondary'):''}`);
+  display(`<p class="eyebrow">Dein Training</p><h1>MultiDivi</h1><p>3 Minuten gemischt.<br>2 Minuten gezielt üben.</p>${levelChoiceHTML()}${btn('Training starten','start')}${btn('Fortschritt','progress','plain')}<p class="footnote">Version 3.0.7 · Ohne Anmeldung. Dein Lernstand bleibt hier.</p>${dev?'<p>Testmodus · 30 + 20 Sekunden · eigener Lernstand</p>':''}${pendingWorker?btn('Neue Version laden','update','secondary'):''}`);
 }
 function isRemainder(){return task()?.level===2&&!task()?.drill;}
 function remainder(){
@@ -173,6 +173,7 @@ app.addEventListener('click',async event=>{
     case 'pause':pause();break;
     case 'delete':deleteDigit();break;
     case 'remainder':remainder();break;
+    case 'undo-division':{const a=active();if(a&&undoDivisionPart(task(),a.work)){checkpoint();a.input=newInput();answerClock=null;firstDigit=null;save();render();}break;}
     case 'submit':submit();break;
     case 'next':{
       checkpoint();const a=active();if(!a?.work.feedback)break;
