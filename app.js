@@ -77,6 +77,10 @@ function boardHTML(t,w){
   if(t.level===6)return `<p>Noch zu verteilen: <strong>${w.remaining}</strong></p>${w.stage==='choose'?'<p>Wie oft passt die Zahl hinein?<br>Du darfst mit einem Teil anfangen.</p>':''}${w.chunks.length?`<details><summary>Bisheriger Rechenweg</summary>${w.chunks.map(c=>`<p>${t.divisor} × ${c.q} = ${c.product}<br>${c.before} − ${c.product} = ${c.after}</p>`).join('')}</details>`:''}`;
   return '';
 }
+function partialSumHTML(t){
+  const columns=String(t.answer).length,labels=['T','H','Z','E'].slice(-columns);
+  return `<div class="partial-sum"><table aria-label="Teilprodukte stellengerecht addieren"><caption>Addiere die Teilprodukte.</caption><thead><tr><th scope="col" aria-label="Rechenzeichen"></th>${labels.map(l=>`<th scope="col">${l}</th>`).join('')}</tr></thead><tbody>${t.partials.map((p,i)=>`<tr><td>${i===t.partials.length-1?'+':''}</td>${String(p.answer).padStart(columns,' ').split('').map(d=>`<td>${d===' '?'':d}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+}
 function inputHTML(){return `<div class="input-area"><p id="place" class="place" aria-live="polite"></p><output id="number" class="number-output" aria-label="Deine eingegebene Zahl"></output><p class="entry-help">Beginne mit den Einern.</p><div class="keypad" aria-label="Zahlentasten">${[1,2,3,4,5,6,7,8,9,0].map(n=>`<button data-digit="${n}" class="${n===0?'zero':''}">${n}</button>`).join('')}${isRemainder()?'<button data-action="remainder" aria-label="R – Rest eingeben">R</button>':''}<button class="delete" data-action="delete" aria-label="Letzte Stelle löschen">Löschen</button></div>${btn('Fertig','submit')}</div>`;}
 function reportHTML(r){
   if(!r)return '';
@@ -97,7 +101,7 @@ function render(){
     if(paused){display('<p class="eyebrow">Deine Übung ist gespeichert</p><h1>In Ruhe weiter</h1><p>Die aktuelle Aufgabe bleibt erhalten.</p>'+btn('Weiterüben','resume')+btn('Fortschritt','progress','plain'));return;}
     const a=active(),t=task();if(!a){nextTask();return;}
     const w=a.work,p=promptFor(t,w);
-    display(`<div class="topline"><p>${s.trial?'Beispielaufgabe':s.stage==='a'?'Teil 1 · Gemischt':'Teil 2 · Gezielt'}</p>${btn('Pause','pause','plain')}</div><section class="exercise"><h1 class="equation">${t.label}</h1>${boardHTML(t,w)}${w.feedback?`<div class="feedback ${w.feedback.ok?'good':'bad'}" role="status"><strong>${w.feedback.ok?TEXT.correct:TEXT.wrong}</strong>${!w.feedback.ok?`<span class="solution">${w.feedback.solution}</span>`:''}</div>${btn(w.feedback.retry?'Noch einmal':'Weiter','next')}`:p?`${t.level>=5||t.level===2?`<h2 class="step-equation">${p.label}</h2>`:''}${inputHTML()}`:''}</section>`);
+    display(`<div class="topline"><p>${s.trial?'Beispielaufgabe':s.stage==='a'?'Teil 1 · Gemischt':'Teil 2 · Gezielt'}</p>${btn('Pause','pause','plain')}</div><section class="exercise"><h1 class="equation">${t.label}</h1>${boardHTML(t,w)}${w.feedback?`<div class="feedback ${w.feedback.ok?'good':'bad'}" role="status"><strong>${w.feedback.ok?TEXT.correct:TEXT.wrong}</strong>${!w.feedback.ok?`<span class="solution">${w.feedback.solution}</span>`:''}</div>${btn(w.feedback.retry?'Noch einmal':'Weiter','next')}`:p?`${t.level===5&&!t.drill&&w.stage==='sum'?partialSumHTML(t):t.level>=5||t.level===2?`<h2 class="step-equation">${p.label}</h2>`:''}${inputHTML()}`:''}</section>`);
     if(!w.feedback&&p)updateInput();startClock();return;
   }
   if(s?.stage==='between'){
@@ -106,7 +110,7 @@ function render(){
   if(s?.stage==='done'){
     display(`<h1>Training geschafft!</h1>${reportHTML(s.reports.b)}<p>${s.comparison.message}</p><p>Du hast gezielt die Aufgaben „${LEVEL_NAMES[s.level]}“ geübt. Übe nun auch die anderen Level, die du für deine nächste Klassenarbeit können solltest.</p><h2>Welches Level möchtest du jetzt üben?</h2>${levelChoiceHTML()}${btn('Neues 3+2-Minuten-Training starten','start')}${s.reports.a.successNumber?btn('Karte aus Teil 1','card','secondary',`data-number="${s.reports.a.successNumber}"`):''}${btn('Fortschritt','progress','plain')}`);return;
   }
-  display(`<p class="eyebrow">Dein Training</p><h1>MultiDivi</h1><p>3 Minuten gemischt.<br>2 Minuten gezielt üben.</p>${levelChoiceHTML()}${btn('Training starten','start')}${btn('Fortschritt','progress','plain')}<p class="footnote">Version 3.0.4 · Ohne Anmeldung. Dein Lernstand bleibt hier.</p>${dev?'<p>Testmodus · 30 + 20 Sekunden · eigener Lernstand</p>':''}${pendingWorker?btn('Neue Version laden','update','secondary'):''}`);
+  display(`<p class="eyebrow">Dein Training</p><h1>MultiDivi</h1><p>3 Minuten gemischt.<br>2 Minuten gezielt üben.</p>${levelChoiceHTML()}${btn('Training starten','start')}${btn('Fortschritt','progress','plain')}<p class="footnote">Version 3.0.5 · Ohne Anmeldung. Dein Lernstand bleibt hier.</p>${dev?'<p>Testmodus · 30 + 20 Sekunden · eigener Lernstand</p>':''}${pendingWorker?btn('Neue Version laden','update','secondary'):''}`);
 }
 function isRemainder(){return task()?.level===2&&!task()?.drill;}
 function remainder(){
